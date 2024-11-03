@@ -1,0 +1,559 @@
+
+        <div class="preview-images">
+            <img src="{{ url_for('static', filename='Turbines.jpg') }}" alt="Preview Image 1" style="width: 200px;"> <!-- Adjust path and size -->
+            <img src="{{ url_for('static', filename='Nuclear.jpg') }}" alt="Preview Image 2" style="width: 200px;"> <!-- Adjust path and size -->
+            <img src="{{ url_for('static', filename='Robot.jpg') }}" alt="Preview Image 3" style="width: 200px;"> <!-- Adjust path and size -->
+            <img src="{{ url_for('static', filename='Parmecuticals.jpg') }}" alt="Preview Image 4" style="width: 200px;"> <!-- Adjust path and size -->
+
+
+def parse_extracted_data(text):
+    data = {
+        "RGB": [[], []],
+        "CMYK": [[], []],
+        "HEX": ["", ""],
+        "CIELAB": [[], []],
+        "LCH": [[], []]
+    }
+
+    # Updated patterns to ensure we capture all values accurately
+    patterns = {
+        "RGB": r"RGB:\s+(\d+)\s+(\d+)\s+(\d+)\s+RGB:\s+(\d+)\s+(\d+)\s+(\d+)",
+        "CMYK": r"CMYK:\s+(\d+%)\s+(\d+%)\s+(\d+%)\s+(\d+%)\s+CMYK:\s+(\d+%)\s+(\d+%)\s+(\d+%)\s+(\d+%)",
+        "HEX": r"HEX:\s+(#[A-Fa-f0-9]+)\s+HEX:\s+(#[A-Fa-f0-9]+)",
+        "CIELAB": r"CIELAB:\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+CIELAB:\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)",
+        "LCH": r"LCH\(ab\):\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+LCH\(ab\):\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)"
+    }
+
+    # Match patterns and store values for each sample
+    for key, pattern in patterns.items():
+        match = re.search(pattern, text)
+        if match:
+            # Split values for Standard and Tested samples
+            if key == "HEX":
+                data[key] = [match.group(1), match.group(2)]
+            else:
+                data[key] = [list(match.groups()[:4]), list(match.groups()[4:])]
+
+    return data
+
+
+    patterns = {
+    "RGB": r"RGB:\s+(\d+)\s+(\d+)\s+(\d+)\s+RGB:\s+(\d+)\s+(\d+)\s+(\d+)",
+    # Fixed CMYK to capture four values for both samples
+    "CMYK": r"CMYK:\s+(\d+%)\s+(\d+%)\s+(\d+%)\s+(\d+%)\s+CMYK:\s+(\d+%)\s+(\d+%)\s+(\d+%)\s+(\d+%)",
+    "HEX": r"HEX:\s+(#[A-Fa-f0-9]+)\s+HEX:\s+(#[A-Fa-f0-9]+)",
+    "CIELAB": r"CIELAB:\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+CIELAB:\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)",
+    # Force a degree symbol into the 3rd LCH value
+    "LCH": r"LCH\(ab\):\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)°?\s+LCH\(ab\):\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)°?"
+}
+
+    patterns = {
+        "RGB": r"RGB:\s+(\d+)\s+(\d+)\s+(\d+)\s+RGB:\s+(\d+)\s+(\d+)\s+(\d+)",
+        "CMYK": r"CMYK:\s+(\d+%)\s+(\d+%)\s+(\d+%)\s+(\d+%)\s+CMYK:\s+(\d+%)\s+(\d+%)\s+(\d+%)\s+(\d+%)",
+        "HEX": r"HEX:\s+(#[A-Fa-f0-9]+)\s+HEX:\s+(#[A-Fa-f0-9]+)",
+        "CIELAB": r"CIELAB:\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+CIELAB:\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)",
+        "LCH": r"LCH\(ab\):\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+LCH\(ab\):\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)"
+    }
+
+
+
+
+from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory
+import cv2
+from PIL import Image
+import pytesseract
+import numpy as np
+import os
+import re
+from firebase_admin import firestore
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+# Use the downloaded JSON file path here
+cred = credentials.Certificate(r"C:\Users\harve\Downloads\RaspberryPi and Code\ackaton2024\hackathon2024-d0a30-firebase-adminsdk-1vp6d-e692d343f1.json")
+firebase_admin.initialize_app(cred)
+
+# Initialize Firestore
+db = firestore.client()
+
+app = Flask(__name__)
+UPLOAD_FOLDER = 'uploads'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+
+@app.route('/search', methods=['POST'])
+def search_sample():
+    sample_id = request.form['sample_id']
+    
+    # Check Firestore for the document with this sample_id
+    doc_ref = db.collection('color_data').document(sample_id)
+    doc = doc_ref.get()
+    
+    if doc.exists:
+        # Retrieve the color data and delta E values
+        data = doc.to_dict()
+        color_data = {k: v for k, v in data.items() if k not in ['delta_e_values']}
+        delta_e_values = data.get('delta_e_values', {})
+
+        # Render the display template with retrieved data
+        return render_template('display.html', sample_id=sample_id, color_data=color_data, delta_e_values=delta_e_values)
+    else:
+        # Show an error message on the index page
+        return render_template('index.html', error_message="Sample ID not found. Please try again.")
+    
+
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(UPLOAD_FOLDER, filename)
+
+def extract_sample_id(filename):
+    match = re.search(r'(\d{5})\.png$', filename)
+    return match.group(1) if match else "Unknown"
+
+def preprocess_image(image):
+    # Preprocessing steps
+    resized_image = cv2.resize(image, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+    denoised_image = cv2.fastNlMeansDenoising(resized_image, None, h=6, searchWindowSize=21, templateWindowSize=7)
+    gray = cv2.cvtColor(denoised_image, cv2.COLOR_BGR2GRAY)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    contrast_image = clahe.apply(gray)
+    _, binary_image = cv2.threshold(contrast_image, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    return contrast_image, binary_image
+
+def extract_text(contrast_image):
+    text = pytesseract.image_to_string(Image.fromarray(contrast_image))
+    print(text)
+    parsed_data = parse_extracted_data(text)
+    display_data_in_terminal(parsed_data)
+
+# Generate HTML and print it
+    html_content = generate_html_table(parsed_data)
+    print(html_content)
+    return text
+
+
+def parse_extracted_data(text):
+    data = {
+        "RGB": [[], []],
+        "CMYK": [[], []],
+        "HEX": ["", ""],  # Capture only one hex value
+        "CIELAB": [[], []],
+        "LCH": [[], []],
+        "Delta E2000": None,
+        "Delta E76": None,
+    }
+
+    # Define patterns to capture the correct number of values for each metric
+    patterns = {
+        "RGB": r"RGB:\s+(\d+)\s+(\d+)\s+(\d+)\s+RGB:\s+(\d+)\s+(\d+)\s+(\d+)",
+        "CMYK": r"CMYK:\s+(\d+%)\s+(\d+%)\s+(\d+%)\s+(\d+%)\s+CMYK:\s+(\d+%)\s+(\d+%)\s+(\d+%)\s+(\d+%)",
+        "HEX": r"HEX:\s+(#[A-Fa-f0-9]+)\s+HEX:\s+(#[A-Fa-f0-9]+)",
+        "CIELAB": r"CIELAB:\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+CIELAB:\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)",
+        "LCH": r"LCH\(ab\):\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)°?\s+LCH\(ab\):\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)°?",
+        "Delta E2000": r"Delta E2000:\s+([\d.]+)",  # Pattern for Delta E2000
+        "Delta E76": r"Delta E76:\s+([\d.]+)",      # Pattern for Delta E76
+    }
+
+    # Extract data for each pattern
+    for key, pattern in patterns.items():
+        match = re.search(pattern, text)
+        if match:
+            if key == "CMYK":
+                data[key] = [list(match.groups()[:4]), list(match.groups()[4:])]
+            elif key == "HEX":
+                data[key] = [match.group(1), match.group(2)]
+            elif key in ["Delta E2000", "Delta E76"]:
+                data[key] = f"{float(match.group(1)):.1f}"  # Format as single decimal
+            else:
+                data[key] = [list(match.groups()[:3]), list(match.groups()[3:])]
+
+    return data
+
+
+def display_data_in_terminal(data):
+    # Print extracted data to the terminal for debugging
+    print("Extracted Color Data:")
+    print("-" * 30)
+    for metric, values in data.items():
+        print(f"{metric}:")
+        print(f"  Standard Sample: {values[0]}")
+        print(f"  Tested Sample:   {values[1]}")
+        print("-" * 30)
+
+def generate_html_table(data):
+    # HTML with placeholders for Delta E values outside the table
+    html = f"""
+    <h2>Color Data</h2>
+    <p>Delta E2000: {data.get('Delta E2000', 'N/A')}</p>
+    <p>Delta E76: {data.get('Delta E76', 'N/A')}</p>
+    <table border="1">
+        <thead>
+            <tr>
+                <th>Metric</th>
+                <th>Standard Sample</th>
+                <th>Tested Sample</th>
+            </tr>
+        </thead>
+        <tbody>
+    """
+
+    # Populate table rows, excluding Delta E values
+    for metric, values in data.items():
+        if metric not in ["Delta E2000", "Delta E76"]:
+            standard = " ".join(values[0]) if values[0] else "N/A"
+            tested = " ".join(values[1]) if values[1] else "N/A"
+            html += f"""
+                <tr>
+                    <td>{metric}</td>
+                    <td>{standard}</td>
+                    <td>{tested}</td>
+                </tr>
+            """
+
+    html += """
+        </tbody>
+    </table>
+    """
+    
+    return html
+
+
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/upload', methods=['POST'])
+def upload_image():
+    file = request.files['image']
+    if file:
+        sample_id = extract_sample_id(file.filename)
+        filepath = os.path.join(UPLOAD_FOLDER, file.filename)
+        file.save(filepath)
+        
+        # Process image and extract text
+        image = cv2.imread(filepath)
+        contrast_image, binary_image = preprocess_image(image)
+        extracted_text = extract_text(contrast_image)
+
+        # Parse data from extracted text
+        color_data = parse_extracted_data(extracted_text)
+        # Prepare data for Firebase
+        data_to_save = {
+            'standard_sample': {},
+            'test_sample': {},
+            'delta_e_values': {
+                'Delta E2000': color_data['Delta E2000'],
+                'Delta E76': color_data['Delta E76']
+                    }
+        }
+
+        for metric, values in color_data.items():
+            if metric not in ['Delta E2000', 'Delta E76']:  # Skip Delta E values in this loop
+                data_to_save['standard_sample'][metric] = values[0]  # Standard Sample values
+                data_to_save['test_sample'][metric] = values[1]  # Tested Sample values
+
+        # Save data to Firestore with the filename as the document ID
+        db.collection('color_data').document(sample_id).set(data_to_save)
+
+        return render_template('display.html', sample_id=sample_id, color_data=color_data, image_path=filepath)
+
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@app.route('/upload', methods=['POST'])
+def upload_image():
+    file = request.files['image']
+    if file:
+        sample_id = extract_sample_id(file.filename)
+        print(sample_id)
+        filepath = os.path.join(UPLOAD_FOLDER, file.filename)
+        file.save(filepath)
+        
+        # Process image and extract text
+        image = cv2.imread(filepath)
+        contrast_image, binary_image = preprocess_image(image)
+        extracted_text = extract_text(contrast_image)
+
+        # Parse data from extracted text
+        color_data = parse_extracted_data(extracted_text)
+        # Prepare data for Firebase
+        data_to_save = {
+            'standard_sample': {},
+            'test_sample': {},
+            'delta_e_values': {
+                'Delta E2000': color_data['Delta E2000'],
+                'Delta E76': color_data['Delta E76']
+                    }
+        }
+
+        for metric, values in color_data.items():
+            if metric not in ['Delta E2000', 'Delta E76']:  # Skip Delta E values in this loop
+                data_to_save['standard_sample'][metric] = values[0]  # Standard Sample values
+                data_to_save['test_sample'][metric] = values[1]  # Tested Sample values
+
+        # Save data to Firestore with the filename as the document ID
+        try:
+            db.collection('color_data').document(sample_id).set(data_to_save)
+        except Exception as e:
+            print(f"Error saving data to Firestore: {e}")
+            flash("Failed to save data. Please try again.")
+
+        return render_template('display.html', sample_id=sample_id, color_data=color_data, image_path=filepath)
+
+        def parse_extracted_data(text):
+    data = {
+        "RGB": [[], []],
+        "CMYK": [[], []],
+        "HEX": ["", ""],  # Capture only one hex value
+        "CIELAB": [[], []],
+        "LCH": [[], []],
+        "Delta E2000": None,
+        "Delta E76": None,
+    }
+
+    # Define patterns to capture the correct number of values for each metric
+    patterns = {
+        "RGB": r"RGB:\s+(\d+)\s+(\d+)\s+(\d+)\s+RGB:\s+(\d+)\s+(\d+)\s+(\d+)",
+        "CMYK": r"CMYK:\s+(\d+%)\s+(\d+%)\s+(\d+%)\s+(\d+%)\s+CMYK:\s+(\d+%)\s+(\d+%)\s+(\d+%)\s+(\d+%)",
+        "HEX": r"HEX:\s+(#[A-Fa-f0-9]+)\s+HEX:\s+(#[A-Fa-f0-9]+)",
+        "CIELAB": r"CIELAB:\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+CIELAB:\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)",
+        "LCH": r"LCH\(ab\):\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)°?\s+LCH\(ab\):\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)°?",
+        "Delta E2000": r"Delta E2000:\s+([\d.]+)",  # Pattern for Delta E2000
+        "Delta E76": r"Delta E76:\s+([\d.]+)",      # Pattern for Delta E76
+    }
+
+    # Extract data for each pattern
+    for key, pattern in patterns.items():
+        match = re.search(pattern, text)
+        if match:
+            if key == "CMYK":
+                data[key] = [list(match.groups()[:4]), list(match.groups()[4:])]
+            elif key == "HEX":
+                data[key] = [match.group(1), match.group(2)]
+            elif key in ["Delta E2000", "Delta E76"]:
+                data[key] = f"{float(match.group(1)):.1f}"  # Format as single decimal
+            else:
+                data[key] = [list(match.groups()[:3]), list(match.groups()[3:])]
+
+    return data
+
+
+
+
+
+
+    def upload_image():
+    file = request.files['image']
+    if file:
+        sample_id = extract_sample_id(file.filename)
+        print(sample_id)
+        filepath = os.path.join(UPLOAD_FOLDER, file.filename)
+        file.save(filepath)
+        # Use a thread to process the image
+        color_data, cropped_image_filename = process_image(filepath)
+        # Process the image
+        #image = cv2.imread(filepath)
+       # contrast_image, binary_image = preprocess_image(image)
+
+        # Crop the original image
+      #  cropped_image = image[int(image.shape[0] * (1 / 3)): int(image.shape[0]), 
+       #                        int(image.shape[1] * (1 / 4)): int(image.shape[1] * (3 / 4))]
+
+        # Save the cropped image
+       # cropped_image_filename = f"cropped_{file.filename}"
+      #  cropped_image_path = os.path.join(UPLOAD_FOLDER, cropped_image_filename)
+      #  cv2.imwrite(cropped_image_path, cropped_image)
+
+      #  extracted_text = extract_text(contrast_image)
+      #  color_data = parse_extracted_data(extracted_text)
+
+        data_to_save = {
+            'standard_sample': {},
+            'test_sample': {},
+            'delta_e_values': {
+                'Delta E2000': color_data['Delta E2000'],
+                'Delta E76': color_data['Delta E76']
+            }
+        }
+
+        for metric, values in color_data.items():
+            if metric not in ['Delta E2000', 'Delta E76']:
+                data_to_save['standard_sample'][metric] = values[0]
+                data_to_save['test_sample'][metric] = values[1]
+
+        # Use safe_db_call to handle retries
+        safe_db_call(db.collection('color_data').document(sample_id).set, data_to_save)
+
+        return render_template('display.html', sample_id=sample_id, color_data=color_data, image_filename=cropped_image_filename)
+
+def parse_extracted_data(text):
+    data = {
+        "RGB": [],
+        "CMYK": [],
+        "HEX": [],
+        "CIELAB": [],
+        "LCH": [],
+        "Delta E2000": None,
+        "Delta E76": None,
+    }
+
+    # Split the text into lines
+    lines = text.strip().split('\n')
+    current_key = None
+
+    for line in lines:
+        line = line.strip()  # Clean up whitespace
+        # Check for keys and store values accordingly
+        if "Delta E2000" in line:
+            current_key = "Delta E2000"
+            data[current_key] = line  # Store the whole line
+        elif "Delta E76" in line:
+            current_key = "Delta E76"
+            data[current_key] = line  # Store the whole line
+        elif "RGB:" in line:
+            # Capture all RGB data until the next label
+            current_key = "RGB"
+            while "RGB:" in line:
+                data[current_key].append(line)
+                # Look for next part in the same line if it exists
+                parts = line.split('RGB:')
+                if len(parts) > 1:
+                    line = "RGB: " + parts[1].strip()
+                else:
+                    break  # No more RGB data
+        elif "CMYK:" in line:
+            # Capture all CMYK data until the next label
+            current_key = "CMYK"
+            while "CMYK:" in line:
+                data[current_key].append(line)
+                parts = line.split('CMYK:')
+                if len(parts) > 1:
+                    line = "CMYK: " + parts[1].strip()
+                else:
+                    break  # No more CMYK data
+        elif "HEX:" in line:
+            # Capture all HEX data until the next label
+            current_key = "HEX"
+            while "HEX:" in line:
+                data[current_key].append(line)
+                parts = line.split('HEX:')
+                if len(parts) > 1:
+                    line = "HEX: " + parts[1].strip()
+                else:
+                    break  # No more HEX data
+        elif "CIELAB:" in line:
+            # Capture all CIELAB data until the next label
+            current_key = "CIELAB"
+            while "CIELAB:" in line:
+                data[current_key].append(line)
+                parts = line.split('CIELAB:')
+                if len(parts) > 1:
+                    line = "CIELAB: " + parts[1].strip()
+                else:
+                    break  # No more CIELAB data
+        elif "LCH(ab):" in line:
+            # Capture all LCH data until the next label
+            current_key = "LCH"
+            while "LCH(ab):" in line:
+                data[current_key].append(line)
+                parts = line.split('LCH(ab):')
+                if len(parts) > 1:
+                    line = "LCH(ab): " + parts[1].strip()
+                else:
+                    break  # No more LCH data
+
+    # Convert lists to formatted strings
+    for key in ["RGB", "CMYK", "HEX", "CIELAB", "LCH"]:
+        data[key] = ' '.join(data[key])  # Join data for each color space
+
+    return data
+def extract_text(contrast_image):
+    # Specify the Tesseract configuration for left-to-right reading order
+    config = r'--oem 3 --psm 6'  # LSTM OCR Engine Mode 3, Page Segmentation Mode 6 (Assume a single uniform block of text)
+    
+    # Use pytesseract to extract text with the specified configuration
+    text = pytesseract.image_to_string(Image.fromarray(contrast_image), config=config)
+    print(text)
+    
+    parsed_data = parse_extracted_data(text)
+    display_data_in_terminal(parsed_data)
+
+    # Generate HTML for displaying data
+    html_content = generate_html_table(parsed_data)
+    print(html_content)
+    return text
+def preprocess_image(image, scale_percent=50):
+    # Resize image
+    width = int(image.shape[1] * scale_percent / 100)
+    height = int(image.shape[0] * scale_percent / 100)
+    dim = (width, height)
+
+    # Resize the image
+    resized_image = cv2.resize(image, dim, interpolation=cv2.INTER_AREA)
+
+    # Denoising (if necessary)
+    denoised_image = cv2.fastNlMeansDenoising(resized_image, None, h=6, searchWindowSize=21, templateWindowSize=7)
+
+    # Grayscale and apply CLAHE
+    gray = cv2.cvtColor(denoised_image, cv2.COLOR_BGR2GRAY)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    contrast_image = clahe.apply(gray)
+
+    # Binarization
+    _, binary_image = cv2.threshold(contrast_image, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+    return contrast_image, binary_image
+
+    def generate_html_table(data):
+    """Generate HTML table from the new data structure"""
+    html = f"""
+    <h2>Color Data</h2>
+    <p>Delta E2000: {data['delta_e_values'].get('Delta E2000', 'N/A')}</p>
+    <p>Delta E76: {data['delta_e_values'].get('Delta E76', 'N/A')}</p>
+    <table border="1">
+        <thead>
+            <tr>
+                <th>Metric</th>
+                <th>Standard Sample</th>
+                <th>Test Sample</th>
+            </tr>
+        </thead>
+        <tbody>
+    """
+
+    # Add rows for each color metric
+    for metric in ["RGB", "CMYK", "HEX", "CIELAB", "LCH"]:
+        html += f"""
+            <tr>
+                <td>{metric}</td>
+                <td>{data['standard_sample'].get(metric, 'N/A')}</td>
+                <td>{data['test_sample'].get(metric, 'N/A')}</td>
+            </tr>
+        """
+
+    html += """
+        </tbody>
+    </table>
+    """
+    
+    return html
