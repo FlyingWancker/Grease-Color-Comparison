@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sample Color Data</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(270deg, #1c2a18, #6eea8e, #826cf6, #006600);
+            background-size: 400% 400%;
+            animation: gradient-animation 15s ease infinite;
+            color: #ffffff;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            flex-direction: column;
+            padding: 20px;
+        }
+
+        @keyframes gradient-animation {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+    
+        .header-images {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 20px;
+            z-index: 1;
+        }
+        .container {
+            text-align: center;
+            width: 80%;
+            max-width: 800px;
+            background-color: #1c2a18;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.3);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px;
+            border: 1px solid #006600;
+            text-align: center;
+        }
+        th {
+            background-color: #6eea8e;
+            color: #1c2a18;
+        }
+    </style>
+</head>
+<body>
+    <div class="header-images">
+        <img src="{{ url_for('static', filename='MRG Lgog.jpg') }}" alt="Left Image" style="width: 300px;">
+        <img src="{{ url_for('static', filename='Grease pic.jpg') }}" alt="Right Image" style="width: 300px;">
+    </div>
+    
+    <div class="container">
+        <h1>Sample ID: {{ sample_id }}</h1>
+        
+        <h2>Color Data</h2>
+        <!-- Display Delta E values if they are available -->
+        {% if delta_e_values %}
+        <p><strong>Delta E2000:</strong> {{ delta_e_values['Delta E2000'] }}</p>
+        <p><strong>Delta E76:</strong> {{ delta_e_values['Delta E76'] }}</p>
+        {% else %}
+        <p><strong>Delta E2000:</strong> {{ color_data.get('Delta E2000', 'N/A') }}</p>
+        <p><strong>Delta E76:</strong> {{ color_data.get('Delta E76', 'N/A') }}</p>
+        {% endif %}
+
+        <!-- Color data table -->
+        <table>
+            <tr>
+                <th>Metric</th>
+                <th>Standard Sample</th>
+                <th>Tested Sample</th>
+            </tr>
+            <tbody>
+                {% for color_type in ['RGB', 'CMYK', 'HEX', 'CIELAB', 'LCH'] %}
+                <tr>
+                    <td>{{ color_type }}</td>
+                    <td>{{ color_data.standard_sample[color_type] }}</td>
+                    <td>{{ color_data.test_sample[color_type] }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+            <!-- Display Uploaded Image -->
+            <img src="{{ url_for('uploaded_file', filename=image_filename)}}" alt="Cropped Image" style="max-width: 50%; margin-top: 20px;">
+
+
+    </div>
+</body>
